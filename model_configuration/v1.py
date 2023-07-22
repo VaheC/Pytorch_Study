@@ -11,4 +11,4 @@ optimizer = optim.SGD(model.parameters(), lr=lr)
 
 lossfn = nn.MSELoss(reduction="mean")
 
-train_step_fn = make_train_step_fn(model, lossfn, optimizer)
+train_step_fn = make_train_step_fn(model, optimizer, lossfn)
