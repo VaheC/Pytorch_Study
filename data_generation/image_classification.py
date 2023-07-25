@@ -3,7 +3,7 @@ import numpy as np
 
 def gen_img(start, target, fill=1, img_size=10):
     # Generates empty image
-    img = np.zeros((img_size, img_size), dtype=np.float)
+    img = np.zeros((img_size, img_size), dtype=np.float64)
 
     start_row, start_col = None, None
 
@@ -51,6 +51,6 @@ def generate_dataset(img_size=10, n_images=100, binary=True, seed=17):
                        for s, t in zip(starts, targets)], dtype=np.uint8)
     
     if binary:
-        targets = (targets > 0).astype(np.int)
+        targets = (targets > 0).astype(np.int32)
     
     return images, targets
