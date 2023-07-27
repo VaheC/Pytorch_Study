@@ -234,3 +234,36 @@ class StepByStep(object):
             vmax=maxv
             )
         return
+    
+    def visualize_filters(self, layer_name, **kwargs):
+        try:
+            # Gets the layer object from the model
+            layer = self.model
+            for name in layer_name.split('.'):
+                layer = getattr(layer, name)
+            # We are only looking at filters for 2D convolutions
+            if isinstance(layer, nn.Conv2d):
+                # Takes the weight information
+                weights = layer.weight.data.cpu().numpy()
+                # weights -> (channels_out (filter), channels_in, H, W)
+                n_filters, n_channels, _, _ = weights.shape
+                # Builds a figure
+                size = (2 * n_channels + 2, 2 * n_filters)
+                fig, axes = plt.subplots(n_filters, n_channels,
+                figsize=size)
+                axes = np.atleast_2d(axes)
+                axes = axes.reshape(n_filters, n_channels)
+                # For each channel_out (filter)
+                for i in range(n_filters):
+                    StepByStep._visualize_tensors(
+                    axes[i, :],
+                    weights[i],
+                    layer_name=f'Filter #{i}',
+                    title='Channel'
+                    )
+                for ax in axes.flat:
+                    ax.label_outer()
+                fig.tight_layout()
+                return fig
+        except AttributeError:
+            return
