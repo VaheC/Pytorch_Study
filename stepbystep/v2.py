@@ -267,3 +267,42 @@ class StepByStep(object):
                 return fig
         except AttributeError:
             return
+        
+    def attach_hooks(self, layers_to_hook, hook_fn=None):
+        # Clear any previous values
+        self.visualization = {}
+        # Creates the dictionary to map layer objects to their names
+        modules = list(self.model.named_modules())
+        layer_names = {layer: name for name, layer in modules[1:]}
+
+        if hook_fn is None:
+            # Hook function to be attached to the forward pass
+            def hook_fn(layer, inputs, outputs):
+                # Gets the layer name
+                name = layer_names[layer]
+                # Detaches outputs
+                values = outputs.detach().cpu().numpy()
+                # Since the hook function may be called multiple times
+                # for example, if we make predictions for multiple
+                # mini-batches, it concatenates the results
+                if self.visualization[name] is None:
+                    self.visualization[name] = values
+                else:
+                    self.visualization[name] = np.concatenate([self.visualization[name], values])
+
+        for name, layer in modules:
+            # If the layer is in our list
+            if name in layers_to_hook:
+                # Initializes the corresponding key in the dictionary
+                self.visualization[name] = None
+                # Register the forward hook and keep the handle
+                # in another dict
+                self.handles[name] = layer.register_forward_hook(hook_fn)
+
+    def remove_hooks(self):
+        # Loops through all hooks and removes them
+        for handle in self.handles.values():
+            handle.remove()
+        # Clear the dict, as all hooks have been removed
+        self.handles = {}
+
