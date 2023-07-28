@@ -307,3 +307,40 @@ class StepByStep(object):
         # Clear the dict, as all hooks have been removed
         self.handles = {}
 
+    def visualize_outputs(self, layers, n_images=10, y=None, yhat=None):
+        layers = filter(lambda l: l in self.visualization.keys(), layers)
+        layers = list(layers)
+        shapes = [self.visualization[layer].shape for layer in layers]
+        n_rows = [shape[1] if len(shape) == 4 else 1 for shape in shapes]
+        total_rows = np.sum(n_rows)
+        fig, axes = plt.subplots(total_rows, n_images,
+        figsize=(1.5*n_images, 1.5*total_rows))
+        axes = np.atleast_2d(axes).reshape(total_rows, n_images)
+        # Loops through the layers, one layer per row of subplots
+        row = 0
+
+        for i, layer in enumerate(layers):
+            start_row = row
+            # Takes the produced feature maps for that layer
+            output = self.visualization[layer]
+            is_vector = len(output.shape) == 2
+
+            for j in range(n_rows[i]):
+                StepByStep._visualize_tensors(
+                axes[row, :],
+                output if is_vector else output[:, j].squeeze(),
+                y,
+                yhat,
+                layer_name=layers[i] \
+                if is_vector \
+                else f'{layers[i]}\nfil#{row-start_row}',
+                title='Image' if (row == 0) else None
+                )
+                row += 1
+
+        for ax in axes.flat:
+            ax.label_outer()
+        plt.tight_layout()
+
+        return fig
+
