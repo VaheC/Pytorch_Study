@@ -343,4 +343,40 @@ class StepByStep(object):
         plt.tight_layout()
 
         return fig
+    
+    def correct(self, x, y, threshold=.5):
+        self.model.eval()
+        yhat = self.model(x.to(self.device))
+        y = y.to(self.device)
+        self.model.train()
+        # We get the size of the batch and the number of classes
+        # (only 1, if it is binary)
+        n_samples, n_dims = yhat.shape
+
+        if n_dims > 1:
+            # In a multiclass classification, the largest logit
+            # always wins, so we don't bother getting probabilities
+            # This is PyTorch's version of argmax,
+            # but it returns a tuple: (max value, index of max value)
+            _, predicted = torch.max(yhat, 1)
+        else:
+            n_dims += 1
+            # In binary classification, we NEED to check if the
+            # last layer is a sigmoid (and then it produces probs)
+            if isinstance(self.model, nn.Sequential) and \
+                isinstance(self.model[-1], nn.Sigmoid):
+                predicted = (yhat > threshold).long()
+            # or something else (logits), which we need to convert
+            # using a sigmoid
+            else:
+                predicted = (torch.sigmoid(yhat) > threshold).long()
+
+        # How many samples got classified correctly for each class
+        result = []
+        for c in range(n_dims):
+            n_class = (y == c).sum().item()
+            n_correct = (predicted[y == c] == c).sum().item()
+            result.append((n_correct, n_class))
+        return torch.tensor(result)
+
 
