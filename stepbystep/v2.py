@@ -274,6 +274,7 @@ class StepByStep(object):
         # Creates the dictionary to map layer objects to their names
         modules = list(self.model.named_modules())
         layer_names = {layer: name for name, layer in modules[1:]}
+        self.handles = {}
 
         if hook_fn is None:
             # Hook function to be attached to the forward pass
