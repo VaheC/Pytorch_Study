@@ -501,4 +501,7 @@ class StepByStep(object):
         ax.set_ylabel('Loss')
         fig.tight_layout()
         return tracking, fig
+    
+    def set_optimizer(self, optimizer):
+        self.optimizer = optimizer
 
