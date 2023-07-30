@@ -31,6 +31,14 @@ class StepByStep(object):
         self.valid_loader = None
         self.writer = None
 
+        self._gradients = {}
+        self._parameters = {}
+
+        self.scheduler = None
+        self.is_batch_lr_scheduler = False
+
+        self.learning_rates = []
+
         self.losses = []
         self.valid_losses = []
         self.total_epochs = 0
@@ -99,15 +107,20 @@ class StepByStep(object):
 
         if data_loader is None:
             return None
+        
+        n_batches = len(data_loader)
 
         mini_batch_losses = []
 
-        for x_batch, y_batch in data_loader:
+        for i, (x_batch, y_batch) in enumerate(data_loader):
 
             x_batch = x_batch.to(self.device)
             y_batch = y_batch.to(self.device)
 
             mini_batch_losses.append(step_fn(x_batch, y_batch))
+
+            if not validation:
+                self._mini_batch_schedulers(i / n_batches)
 
         loss = np.mean(mini_batch_losses)
         
@@ -138,6 +151,8 @@ class StepByStep(object):
             with torch.no_grad():
                 valid_loss = self._get_minibatch_loss(validation=True)
                 self.valid_losses.append(valid_loss)
+
+            self._epoch_schedulers(valid_loss)
 
             if self.writer:
                 scalars = {'training': loss}
@@ -505,3 +520,94 @@ class StepByStep(object):
     def set_optimizer(self, optimizer):
         self.optimizer = optimizer
 
+    def capture_gradients(self, layers_to_hook):
+        if not isinstance(layers_to_hook, list):
+            layers_to_hook = [layers_to_hook]
+
+        modules = list(self.model.named_modules())
+        self._gradients = {}
+
+        def make_log_fn(name, parm_id):
+            def log_fn(grad):
+                self._gradients[name][parm_id].append(grad.tolist())
+                return None
+            return log_fn
+        
+        for name, layer in self.model.named_modules():
+            if name in layers_to_hook:
+                self._gradients.update({name: {}})
+                for parm_id, p in layer.named_parameters():
+                    if p.requires_grad:
+                        self._gradients[name].update({parm_id: []})
+                        log_fn = make_log_fn(name, parm_id)
+                        self.handles[f'{name}.{parm_id}.grad'] = \
+                        p.register_hook(log_fn)
+        
+        return
+    
+    def capture_parameters(self, layers_to_hook):
+        if not isinstance(layers_to_hook, list):
+            layers_to_hook = [layers_to_hook]
+
+        modules = list(self.model.named_modules())
+        layer_names = {layer: name for name, layer in modules}
+        self._parameters = {}
+
+        for name, layer in modules:
+            if name in layers_to_hook:
+                self._parameters.update({name: {}})
+                for parm_id, p in layer.named_parameters():
+                    self._parameters[name].update({parm_id: []})
+
+        def fw_hook_fn(layer, inputs, outputs):
+            name = layer_names[layer]
+            for parm_id, parameter in layer.named_parameters():
+                self._parameters[name][parm_id].append(
+                parameter.tolist()
+                )
+
+        self.attach_hooks(layers_to_hook, fw_hook_fn)
+        
+        return
+
+    def set_lr_scheduler(self, scheduler):
+        # Makes sure the scheduler in the argument is assigned to the
+        # optimizer we're using in this class
+        if scheduler.optimizer == self.optimizer:
+            self.scheduler = scheduler
+            if (isinstance(scheduler, optim.lr_scheduler.CyclicLR) or
+                isinstance(scheduler, optim.lr_scheduler.OneCycleLR) or
+                isinstance(scheduler,
+                optim.lr_scheduler.CosineAnnealingWarmRestarts)):
+                self.is_batch_lr_scheduler = True
+            else:
+                self.is_batch_lr_scheduler = False
+
+    def _epoch_schedulers(self, val_loss):
+        if self.scheduler:
+            if not self.is_batch_lr_scheduler:
+                if isinstance(self.scheduler,
+                    torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
+                current_lr = list(map(
+                    lambda d: d['lr'],
+                    self.scheduler.optimizer.state_dict()['param_groups']
+                ))
+                self.learning_rates.append(current_lr)
+
+    def _mini_batch_schedulers(self, frac_epoch):
+        if self.scheduler:
+            if self.is_batch_lr_scheduler:
+                if isinstance(self.scheduler,
+                    torch.optim.lr_scheduler.CosineAnnealingWarmRestarts):
+                    self.scheduler.step(self.total_epochs + frac_epoch)
+                else:
+                    self.scheduler.step()
+                current_lr = list(
+                    map(lambda d: d['lr'],
+                    self.scheduler.optimizer.state_dict()\
+                    ['param_groups'])
+                )
+                self.learning_rates.append(current_lr)
